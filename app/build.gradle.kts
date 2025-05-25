@@ -1,6 +1,7 @@
-import com.mikepenz.aboutlibraries.plugin.DuplicateMode.MERGE
-import com.mikepenz.aboutlibraries.plugin.DuplicateRule.GROUP
-import org.jetbrains.kotlin.compose.compiler.gradle.ComposeFeatureFlag
+import com.mikepenz.aboutlibraries.plugin.DuplicateMode
+import com.mikepenz.aboutlibraries.plugin.DuplicateRule
+import java.util.regex.Pattern
+import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
 val isRelease: Boolean
     get() = gradle.startParameter.taskNames.any { it.contains("Release") }
@@ -9,7 +10,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.spotless)
@@ -168,10 +168,6 @@ android {
     namespace = "com.hippo.ehviewer"
 }
 
-composeCompiler {
-    featureFlags = setOf(ComposeFeatureFlag.OptimizeNonSkippingGroups)
-}
-
 baselineProfile {
     mergeIntoMain = true
 }
@@ -261,6 +257,7 @@ kotlin {
 
     // https://kotlinlang.org/docs/gradle-compiler-options.html#all-compiler-options
     compilerOptions {
+        jvmDefault = JvmDefaultMode.NO_COMPATIBILITY
         progressiveMode = true
         optIn.addAll(
             "coil3.annotation.ExperimentalCoilApi",
@@ -272,6 +269,7 @@ kotlin {
             "androidx.compose.foundation.ExperimentalFoundationApi",
             "androidx.compose.animation.ExperimentalAnimationApi",
             "androidx.compose.animation.ExperimentalSharedTransitionApi",
+            "androidx.compose.runtime.ExperimentalComposeRuntimeApi",
             "androidx.paging.ExperimentalPagingApi",
             "kotlin.ExperimentalStdlibApi",
             "kotlin.concurrent.atomics.ExperimentalAtomicApi",
@@ -283,10 +281,7 @@ kotlin {
             "splitties.preferences.DataStorePreferencesPreview",
         )
         freeCompilerArgs.addAll(
-            "-Xjvm-default=all",
-            "-Xcontext-receivers",
-            "-Xwhen-guards",
-            "-Xsuppress-warning=CONTEXT_RECEIVERS_DEPRECATED",
+            "-Xcontext-parameters",
             "-Xannotation-default-target=param-property",
         )
     }
@@ -298,8 +293,14 @@ ksp {
 }
 
 aboutLibraries {
-    duplicationMode = MERGE
-    duplicationRule = GROUP
+    collect {
+        includePlatform = false
+    }
+    library {
+        exclusionPatterns.add(Pattern.compile("org\\.jetbrains\\.(?:compose|androidx)\\..*"))
+        duplicationMode = DuplicateMode.MERGE
+        duplicationRule = DuplicateRule.GROUP
+    }
 }
 
 val ktlintVersion = libs.ktlint.get().version
