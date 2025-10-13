@@ -70,7 +70,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.currentCompositeKeyHashCode
@@ -97,14 +96,26 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.compose.rememberNavController
-import com.hippo.ehviewer.R
+import com.ehviewer.core.files.isDirectory
+import com.ehviewer.core.files.toOkioPath
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.LabeledCheckbox
+import com.ehviewer.core.ui.component.LocalSideSheetState
+import com.ehviewer.core.ui.component.MutableSideSheet
+import com.ehviewer.core.ui.icons.EhIcons
+import com.ehviewer.core.ui.icons.filled.Subscriptions
+import com.ehviewer.core.ui.util.LocalSnackBarFabPadding
+import com.ehviewer.core.ui.util.LocalWindowSizeClass
+import com.ehviewer.core.util.isAtLeastQ
+import com.ehviewer.core.util.isAtLeastS
+import com.ehviewer.core.util.withIOContext
+import com.hippo.ehviewer.EhApplication.Companion.initialized
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.data.ListUrlBuilder
 import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser
@@ -112,8 +123,6 @@ import com.hippo.ehviewer.client.parser.GalleryPageUrlParser
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.download.DownloadService
 import com.hippo.ehviewer.download.downloadLocation
-import com.hippo.ehviewer.icons.EhIcons
-import com.hippo.ehviewer.icons.filled.Subscriptions
 import com.hippo.ehviewer.ui.destinations.DownloadScreenDestination
 import com.hippo.ehviewer.ui.destinations.DownloadsScreenDestination
 import com.hippo.ehviewer.ui.destinations.FavouritesScreenDestination
@@ -130,8 +139,6 @@ import com.hippo.ehviewer.ui.screen.asDstWith
 import com.hippo.ehviewer.ui.screen.navWithUrl
 import com.hippo.ehviewer.ui.settings.showNewVersion
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.LabeledCheckbox
-import com.hippo.ehviewer.ui.tools.LocalWindowSizeClass
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.awaitInputText
 import com.hippo.ehviewer.updater.AppUpdater
@@ -141,16 +148,11 @@ import com.hippo.ehviewer.util.calculateFraction
 import com.hippo.ehviewer.util.displayString
 import com.hippo.ehviewer.util.getParcelableExtraCompat
 import com.hippo.ehviewer.util.getUrlFromClipboard
-import com.hippo.ehviewer.util.isAtLeastQ
-import com.hippo.ehviewer.util.isAtLeastS
 import com.hippo.ehviewer.util.sha1
-import com.hippo.files.isDirectory
-import com.hippo.files.toOkioPath
 import com.ramcosta.composedestinations.DestinationsNavHost
 import com.ramcosta.composedestinations.spec.Direction
 import com.ramcosta.composedestinations.utils.currentDestinationAsState
 import com.ramcosta.composedestinations.utils.rememberDestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.withIOContext
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -172,9 +174,6 @@ private val navItems = arrayOf<Triple<Direction, Int, ImageVector>>(
     Triple(DownloadsScreenDestination, R.string.downloads, Icons.Default.Download),
     Triple(SettingsScreenDestination, R.string.settings, Icons.Default.Settings),
 )
-
-val StartDestination
-    get() = navItems[Settings.launchPage].first
 
 class MainActivity : EhActivity() {
 
@@ -202,7 +201,7 @@ class MainActivity : EhActivity() {
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        installSplashScreen().setKeepOnScreenCondition { !initialized }
         super.onCreate(savedInstanceState)
         setMD3Content {
             val configuration = LocalConfiguration.current
@@ -359,6 +358,7 @@ class MainActivity : EhActivity() {
             val density = LocalDensity.current
             val adaptiveInfo = currentWindowAdaptiveInfo()
             val needSignIn by Settings.needSignIn.collectAsState()
+            val launchPage by Settings.launchPage.collectAsState()
             CompositionLocalProvider(
                 LocalNavDrawerState provides navDrawerState,
                 LocalSideSheetState provides sideSheetState,
@@ -396,7 +396,7 @@ class MainActivity : EhActivity() {
                                         .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom)),
                                 ) {
                                     Image(
-                                        painter = painterResource(id = R.drawable.sadpanda_low_poly),
+                                        painter = painterResource(id = com.hippo.ehviewer.R.drawable.sadpanda_low_poly),
                                         contentDescription = null,
                                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                         contentScale = ContentScale.FillWidth,
@@ -430,6 +430,7 @@ class MainActivity : EhActivity() {
                             }
                         }.collectAsState(0f)
                         MutableSideSheet(
+                            drawerState = sideSheetState,
                             modifier = Modifier.graphicsLayer {
                                 if (radius != 0f) {
                                     renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
@@ -443,7 +444,7 @@ class MainActivity : EhActivity() {
                                 CompositionLocalProvider(LocalSharedTransitionScope provides this) {
                                     val start = when {
                                         needSignIn -> SignInScreenDestination
-                                        hasNetwork -> StartDestination
+                                        hasNetwork -> navItems[launchPage].first
                                         else -> DownloadsScreenDestination
                                     }
                                     DestinationsNavHost(
@@ -533,7 +534,6 @@ val LocalNavDrawerState = compositionLocalOf<DrawerState> { error("CompositionLo
 
 val LocalDrawerHandle = compositionLocalOf<SnapshotStateList<Long>> { error("CompositionLocal LocalDrawerHandle not present!") }
 val LocalSnackBarHostState = compositionLocalOf<SnackbarHostState> { error("CompositionLocal LocalSnackBarHostState not present!") }
-val LocalSnackBarFabPadding = compositionLocalOf<State<Dp>> { error("CompositionLocal LocalSnackBarFabPadding not present!") }
 val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope> { error("CompositionLocal LocalSharedTransitionScope not present!") }
 
 @Composable

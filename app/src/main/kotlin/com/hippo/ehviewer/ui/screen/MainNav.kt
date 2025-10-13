@@ -1,7 +1,7 @@
 package com.hippo.ehviewer.ui.screen
 
 import androidx.annotation.MainThread
-import com.hippo.ehviewer.client.data.BaseGalleryInfo
+import com.ehviewer.core.model.BaseGalleryInfo
 import com.hippo.ehviewer.client.data.ListUrlBuilder
 import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser
 import com.hippo.ehviewer.client.parser.GalleryListUrlParser
@@ -24,8 +24,8 @@ private fun urlToDestination(url: String): Direction? {
     return null
 }
 
-context(nav: DestinationsNavigator)
 @MainThread
+context(_: DestinationsNavigator)
 fun navWithUrl(url: String): Boolean {
     val dest = urlToDestination(url) ?: return false
     navigate(dest)

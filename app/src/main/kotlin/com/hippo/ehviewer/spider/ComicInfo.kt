@@ -1,23 +1,24 @@
 package com.hippo.ehviewer.spider
 
+import com.ehviewer.core.database.util.SimpleTagsConverter
+import com.ehviewer.core.files.read
+import com.ehviewer.core.files.write
+import com.ehviewer.core.model.GalleryDetail
+import com.ehviewer.core.model.GalleryInfo
+import com.ehviewer.core.model.GalleryTag
+import com.ehviewer.core.model.PowerStatus
+import com.ehviewer.core.model.TagNamespace
+import com.ehviewer.core.model.TagNamespace.Artist
+import com.ehviewer.core.model.TagNamespace.Character
+import com.ehviewer.core.model.TagNamespace.Cosplayer
+import com.ehviewer.core.model.TagNamespace.Female
+import com.ehviewer.core.model.TagNamespace.Group
+import com.ehviewer.core.model.TagNamespace.Location
+import com.ehviewer.core.model.TagNamespace.Male
+import com.ehviewer.core.model.TagNamespace.Mixed
+import com.ehviewer.core.model.TagNamespace.Other
+import com.ehviewer.core.model.TagNamespace.Parody
 import com.hippo.ehviewer.client.EhUrl
-import com.hippo.ehviewer.client.data.GalleryDetail
-import com.hippo.ehviewer.client.data.GalleryInfo
-import com.hippo.ehviewer.client.data.GalleryTag
-import com.hippo.ehviewer.client.data.PowerStatus
-import com.hippo.ehviewer.client.data.SimpleTagsConverter
-import com.hippo.ehviewer.client.data.TagNamespace
-import com.hippo.ehviewer.client.data.TagNamespace.Artist
-import com.hippo.ehviewer.client.data.TagNamespace.Character
-import com.hippo.ehviewer.client.data.TagNamespace.Cosplayer
-import com.hippo.ehviewer.client.data.TagNamespace.Female
-import com.hippo.ehviewer.client.data.TagNamespace.Group
-import com.hippo.ehviewer.client.data.TagNamespace.Male
-import com.hippo.ehviewer.client.data.TagNamespace.Mixed
-import com.hippo.ehviewer.client.data.TagNamespace.Other
-import com.hippo.ehviewer.client.data.TagNamespace.Parody
-import com.hippo.files.read
-import com.hippo.files.write
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -54,13 +55,13 @@ fun GalleryInfo.getComicInfo(): ComicInfo {
     with(TagNamespace) {
         when (this@getComicInfo) {
             is GalleryDetail -> tagGroups.forEach { group ->
-                val list = group.tags.filterNot { (text, power, _) -> text == TAG_ORIGINAL || power == PowerStatus.WEAK }.map(GalleryTag::text)
-                when (val ns = group.nameSpace) {
+                val list = group.tags.filterNot { (text, power, _) -> text == TAG_ORIGINAL || power == PowerStatus.Weak }.map(GalleryTag::text)
+                when (val ns = group.namespace) {
                     Artist, Cosplayer -> artists.addAll(list)
                     Group -> groups.addAll(list)
                     Character -> characters.addAll(list)
                     Parody -> parodies.addAll(list)
-                    Other -> otherTags.addAll(list)
+                    Location, Other -> otherTags.addAll(list)
                     Female, Male, Mixed -> ns.prefix.let { prefix ->
                         list.forEach { tag -> otherTags.add("$prefix:$tag") }
                     }
@@ -76,7 +77,7 @@ fun GalleryInfo.getComicInfo(): ComicInfo {
                     Group -> groups.add(tag)
                     Character -> characters.add(tag)
                     Parody -> if (tag != TAG_ORIGINAL) parodies.add(tag)
-                    Other -> otherTags.add(tag)
+                    Location, Other -> otherTags.add(tag)
                     Female, Male, Mixed -> ns.prefix.let { otherTags.add("$it:$tag") }
                     else -> Unit
                 }

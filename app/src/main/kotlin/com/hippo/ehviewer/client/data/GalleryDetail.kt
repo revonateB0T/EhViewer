@@ -16,7 +16,13 @@
 package com.hippo.ehviewer.client.data
 
 import androidx.compose.ui.util.fastFlatMap
-import com.hippo.ehviewer.client.data.GalleryInfo.Companion.S_LANGS
+import com.ehviewer.core.model.GalleryDetail
+import com.ehviewer.core.model.GalleryInfo
+import com.ehviewer.core.model.GalleryTagGroup
+import com.ehviewer.core.model.PowerStatus
+import com.hippo.ehviewer.EhDB
+import com.hippo.ehviewer.Settings
+import com.hippo.ehviewer.client.EhFilter
 
 private val LANGUAGES = arrayOf(
     "English",
@@ -35,29 +41,27 @@ private val LANGUAGES = arrayOf(
     "Dutch",
 )
 
-data class GalleryDetail(
-    val galleryInfo: BaseGalleryInfo = BaseGalleryInfo(),
-    var apiUid: Long = -1L,
-    var apiKey: String? = null,
-    var torrentCount: Int = 0,
-    var torrentUrl: String? = null,
-    var archiveUrl: String? = null,
-    var parent: String? = null,
-    var newerVersions: List<BaseGalleryInfo> = emptyList(),
-    var visible: String? = null,
-    var language: String? = null,
-    var size: String? = null,
-    var favoriteCount: Int = 0,
-    var ratingCount: Int = 0,
-    val tagGroups: List<GalleryTagGroup>,
-    var comments: GalleryCommentList,
-    val previewList: List<GalleryPreview>,
-) : GalleryInfo by galleryInfo {
-    fun fillInfo() {
-        val index = LANGUAGES.indexOf(language)
-        if (index != -1) simpleLanguage = S_LANGS[index]
-        simpleTags = tagGroups.fastFlatMap(GalleryTagGroup::tags).map { (text, power, _) ->
-            if (power == PowerStatus.WEAK) "_$text" else text
-        }
+suspend fun GalleryDetail.fillInfo() {
+    val index = LANGUAGES.indexOf(language)
+    if (index != -1) simpleLanguage = GalleryInfo.S_LANGS[index]
+    simpleTags = tagGroups.fastFlatMap(GalleryTagGroup::tags).map { (text, power, _) ->
+        if (power == PowerStatus.Weak) "_$text" else text
+    }
+    if (favoriteSlot == GalleryInfo.NOT_FAVORITED && EhDB.containLocalFavorites(gid)) {
+        favoriteSlot = GalleryInfo.LOCAL_FAVORITED
+    }
+}
+
+suspend fun GalleryDetail.filterComments() {
+    comments = with(comments) {
+        val scoreThreshold = Settings.commentThreshold.value
+        copy(
+            comments = comments.filter {
+                it.uploader ||
+                    it.score > scoreThreshold &&
+                    !EhFilter.filterCommenter(it.user.orEmpty()) &&
+                    !EhFilter.filterComment(it.comment)
+            },
+        )
     }
 }

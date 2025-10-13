@@ -35,17 +35,27 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.ehviewer.core.database.model.DownloadInfo
+import com.ehviewer.core.files.delete
+import com.ehviewer.core.files.exists
+import com.ehviewer.core.files.isDirectory
+import com.ehviewer.core.files.write
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.model.BaseGalleryInfo
+import com.ehviewer.core.model.GalleryInfo
+import com.ehviewer.core.model.GalleryInfo.Companion.LOCAL_FAVORITED
+import com.ehviewer.core.model.GalleryInfo.Companion.NOT_FAVORITED
+import com.ehviewer.core.ui.component.LabeledCheckbox
+import com.ehviewer.core.util.isAtLeastT
+import com.ehviewer.core.util.mapToLongArray
+import com.ehviewer.core.util.toEpochMillis
+import com.ehviewer.core.util.toLocalDateTime
+import com.ehviewer.core.util.withIOContext
 import com.hippo.ehviewer.EhDB
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUtils
-import com.hippo.ehviewer.client.data.BaseGalleryInfo
-import com.hippo.ehviewer.client.data.GalleryInfo
-import com.hippo.ehviewer.client.data.GalleryInfo.Companion.LOCAL_FAVORITED
-import com.hippo.ehviewer.client.data.GalleryInfo.Companion.NOT_FAVORITED
 import com.hippo.ehviewer.client.exception.EhException
-import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.download.DownloadManager
 import com.hippo.ehviewer.download.DownloadService
 import com.hippo.ehviewer.download.downloadDir
@@ -54,7 +64,6 @@ import com.hippo.ehviewer.download.tempDownloadDir
 import com.hippo.ehviewer.ui.destinations.ReaderScreenDestination
 import com.hippo.ehviewer.ui.reader.ReaderScreenArgs
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.LabeledCheckbox
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.awaitResult
 import com.hippo.ehviewer.ui.tools.awaitSelectDate
@@ -64,21 +73,12 @@ import com.hippo.ehviewer.ui.tools.awaitSelectItemWithIcon
 import com.hippo.ehviewer.ui.tools.awaitSelectItemWithIconAndTextField
 import com.hippo.ehviewer.util.FavouriteStatusRouter
 import com.hippo.ehviewer.util.bgWork
-import com.hippo.ehviewer.util.isAtLeastT
-import com.hippo.ehviewer.util.mapToLongArray
 import com.hippo.ehviewer.util.requestPermission
 import com.hippo.ehviewer.util.restartApplication
-import com.hippo.ehviewer.util.toEpochMillis
-import com.hippo.ehviewer.util.toLocalDateTime
-import com.hippo.files.delete
-import com.hippo.files.exists
-import com.hippo.files.isDirectory
-import com.hippo.files.write
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.withIOContext
+import kotlin.time.Clock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -100,10 +100,10 @@ private fun ensureNoMediaFile(downloadDir: Path) {
 
 private val lck = Mutex()
 
-suspend fun keepNoMediaFileStatus(downloadDir: Path = downloadLocation) {
+suspend fun keepNoMediaFileStatus(downloadDir: Path = downloadLocation, mediaScan: Boolean = Settings.mediaScan.value) {
     if (downloadDir.isDirectory) {
         lck.withLock {
-            if (Settings.mediaScan) {
+            if (mediaScan) {
                 removeNoMediaFile(downloadDir)
             } else {
                 ensureNoMediaFile(downloadDir)
@@ -114,7 +114,7 @@ suspend fun keepNoMediaFileStatus(downloadDir: Path = downloadLocation) {
 
 fun getFavoriteIcon(favorited: Boolean) = if (favorited) Icons.Default.Favorite else Icons.Default.FavoriteBorder
 
-context(_: DialogState, context: MainActivity)
+context(_: DialogState, _: MainActivity)
 suspend fun startDownload(forceDefault: Boolean, vararg galleryInfos: BaseGalleryInfo) {
     if (isAtLeastT) {
         requestPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -177,11 +177,11 @@ suspend fun startDownload(forceDefault: Boolean, vararg galleryInfos: BaseGaller
 }
 
 context(_: DialogState)
-suspend fun modifyFavorites(galleryInfo: BaseGalleryInfo): Boolean {
+suspend fun modifyFavorites(galleryInfo: GalleryInfo): Boolean {
     val localFavorited = EhDB.containLocalFavorites(galleryInfo.gid)
     if (Settings.hasSignedIn.value) {
         val isFavorited = galleryInfo.favoriteSlot != NOT_FAVORITED
-        val defaultFavSlot = Settings.defaultFavSlot
+        val defaultFavSlot = Settings.defaultFavSlot.value
         if (defaultFavSlot == -2) {
             val localFav = getFavoriteIcon(localFavorited) to appCtx.getString(R.string.local_favorites)
             val cloudFav = Settings.favCat.mapIndexed { index, name ->
@@ -215,7 +215,7 @@ suspend fun modifyFavorites(galleryInfo: BaseGalleryInfo): Boolean {
 }
 
 private suspend fun doModifyFavorites(
-    galleryInfo: BaseGalleryInfo,
+    galleryInfo: GalleryInfo,
     slot: Int = NOT_FAVORITED,
     localFavorited: Boolean = true,
     note: String = "",
@@ -263,7 +263,7 @@ private suspend fun doModifyFavorites(
     add
 }
 
-suspend fun removeFromFavorites(galleryInfo: BaseGalleryInfo) = doModifyFavorites(
+suspend fun removeFromFavorites(galleryInfo: GalleryInfo) = doModifyFavorites(
     galleryInfo = galleryInfo,
     localFavorited = EhDB.containLocalFavorites(galleryInfo.gid),
 )
@@ -419,7 +419,7 @@ suspend fun showMoveDownloadLabelList(list: Collection<DownloadInfo>): String? {
 }
 
 context(_: DialogState)
-suspend fun awaitSelectDate(): String? {
+suspend fun awaitSelectDate(): String {
     val initial = LocalDate(2007, 3, 21)
     val yesterday = Clock.System.todayIn(TimeZone.UTC).minus(1, DateTimeUnit.DAY)
     val initialMillis = initial.toEpochMillis()
@@ -432,8 +432,7 @@ suspend fun awaitSelectDate(): String? {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis in dateRange
         },
     )
-    val date = dateMillis?.run { toLocalDateTime().date.toString() }
-    return date
+    return dateMillis.toLocalDateTime().date.toString()
 }
 
 context(_: Context, _: DialogState)

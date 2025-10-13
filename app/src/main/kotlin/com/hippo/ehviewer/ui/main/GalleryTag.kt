@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -19,26 +20,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ehviewer.core.model.GalleryTagGroup
+import com.ehviewer.core.model.PowerStatus
+import com.ehviewer.core.model.TagNamespace
+import com.ehviewer.core.model.VoteStatus
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhTagDatabase
-import com.hippo.ehviewer.client.data.GalleryTagGroup
-import com.hippo.ehviewer.client.data.PowerStatus
-import com.hippo.ehviewer.client.data.TagNamespace
-import com.hippo.ehviewer.client.data.VoteStatus
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.ui.tools.includeFontPadding
 
-context(_: Context)
 @Composable
+context(_: Context)
 fun GalleryTags(
     tagGroups: List<GalleryTagGroup>,
     onTagClick: (String) -> Unit,
     onTagLongClick: (String, String, VoteStatus) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val canTranslate = Settings.showTagTranslations && EhTagDatabase.translatable && EhTagDatabase.initialized
+    val canTranslate = Settings.showTagTranslations.value && EhTagDatabase.translatable && EhTagDatabase.initialized
     val ehTags = EhTagDatabase.takeIf { canTranslate }
     fun TagNamespace.translate() = ehTags?.getTranslation(tag = value) ?: value
     fun String.translate(ns: TagNamespace) = ehTags?.getTranslation(prefix = ns.prefix, tag = this) ?: this
@@ -58,7 +60,8 @@ fun GalleryTags(
                         Box {
                             BaseRoundText(
                                 text = translation,
-                                weak = power == PowerStatus.WEAK,
+                                weak = power == PowerStatus.Weak,
+                                solid = power == PowerStatus.Solid && showVote,
                                 modifier = Modifier.combinedClickable(
                                     onClick = { onTagClick(tag) },
                                     onLongClick = {
@@ -67,7 +70,7 @@ fun GalleryTags(
                                     },
                                 ),
                             )
-                            if (vote != VoteStatus.NONE && showVote) {
+                            if (vote != VoteStatus.None && showVote) {
                                 Text(
                                     text = vote.display,
                                     modifier = Modifier.align(Alignment.TopEnd).padding(horizontal = 2.dp),
@@ -88,6 +91,7 @@ private fun BaseRoundText(
     text: String,
     modifier: Modifier = Modifier,
     weak: Boolean = false,
+    solid: Boolean = false,
     isGroup: Boolean = false,
 ) {
     val bgColor = if (isGroup) {
@@ -103,8 +107,9 @@ private fun BaseRoundText(
         Text(
             text = text,
             modifier = modifier.padding(horizontal = 12.dp, vertical = 4.dp).width(IntrinsicSize.Max),
-            color = MaterialTheme.colorScheme.onSurface.let { if (weak) it.copy(0.5F) else it },
+            color = LocalContentColor.current.let { if (weak) it.copy(0.5F) else it },
             style = MaterialTheme.typography.labelLarge.includeFontPadding,
+            textDecoration = if (solid) TextDecoration.Underline else null,
         )
     }
 }

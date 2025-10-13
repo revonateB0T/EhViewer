@@ -1,44 +1,22 @@
 import com.mikepenz.aboutlibraries.plugin.DuplicateMode
 import com.mikepenz.aboutlibraries.plugin.DuplicateRule
 import java.util.regex.Pattern
-import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
 val isRelease: Boolean
     get() = gradle.startParameter.taskNames.any { it.contains("Release") }
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ehviewer.android.application)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.spotless)
-    alias(libs.plugins.aboutlibrariesPlugin)
-    alias(libs.plugins.composeCompilerReportGenerator)
+    alias(libs.plugins.aboutlibraries)
+    alias(libs.plugins.aboutlibrariesAndroid)
     alias(libs.plugins.baselineprofile)
 }
 
 val supportedAbis = arrayOf("arm64-v8a", "x86_64", "armeabi-v7a")
 
 android {
-    androidResources {
-        generateLocaleConfig = true
-        localeFilters += listOf(
-            "zh",
-            "zh-rCN",
-            "zh-rHK",
-            "zh-rTW",
-            "es",
-            "ja",
-            "ko",
-            "fr",
-            "de",
-            "th",
-            "tr",
-            "nb-rNO",
-        )
-    }
-
     splits {
         abi {
             isEnable = true
@@ -78,8 +56,8 @@ android {
 
     defaultConfig {
         applicationId = "moe.tarsin.ehviewer"
-        versionCode = 180062
-        versionName = "1.14.0"
+        versionCode = 180063
+        versionName = "1.15.0"
         versionNameSuffix = "-SNAPSHOT"
         buildConfigField("String", "RAW_VERSION_NAME", "\"$versionName${versionNameSuffix.orEmpty()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"$commitSha\"")
@@ -97,9 +75,10 @@ android {
     flavorDimensions += "api"
 
     productFlavors {
-        create("default")
+        create("default") {
+            minSdk = 26
+        }
         create("marshmallow") {
-            minSdk = 23
             applicationIdSuffix = ".m"
             versionNameSuffix = "-M"
         }
@@ -115,15 +94,12 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    lint {
-        checkReleaseBuilds = false
-        disable += setOf("MissingTranslation", "MissingQuantity")
-        error += setOf("InlinedApi")
-    }
-
     packaging {
         dex {
             useLegacyPackaging = false
+        }
+        jniLibs {
+            excludes += "**/libdatastore_shared_counter.so" // DataStore multi-process
         }
         resources {
             // Required by Layout Inspector
@@ -134,9 +110,30 @@ android {
                 "/kotlin/**",
                 "**.txt",
                 "**.bin",
-                "/okhttp3/**", // Okhttp public suffix
             )
         }
+    }
+
+    androidResources {
+        ignoreAssetsPatterns += listOf(
+            "!PublicSuffixDatabase.list", // OkHttp
+            "!composepreference.preference.generated.resources",
+        )
+        generateLocaleConfig = true
+        localeFilters += listOf(
+            "zh",
+            "zh-rCN",
+            "zh-rHK",
+            "zh-rTW",
+            "es",
+            "ja",
+            "ko",
+            "fr",
+            "de",
+            "th",
+            "tr",
+            "nb-rNO",
+        )
     }
 
     dependenciesInfo.includeInApk = false
@@ -173,6 +170,10 @@ baselineProfile {
 }
 
 dependencies {
+    implementation(projects.core.data)
+    implementation(projects.core.i18n)
+    implementation(projects.core.ui)
+
     // https://developer.android.com/jetpack/androidx/releases/activity
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
@@ -186,12 +187,15 @@ dependencies {
     implementation(libs.compose.destinations.core)
     ksp(libs.compose.destinations.compiler)
 
+    implementation(libs.compose.preference) {
+        // R8 won't remove it because it adds a content provider
+        exclude(group = "org.jetbrains.compose.components", module = "components-resources")
+    }
+
     implementation(libs.androidx.core)
     implementation(libs.androidx.core.splashscreen)
 
-    implementation(libs.androidx.constraintlayout.compose)
     implementation(libs.androidx.datastore)
-    implementation(libs.androidx.graphics.path)
 
     // https://developer.android.com/jetpack/androidx/releases/lifecycle
     implementation(libs.androidx.lifecycle.process)
@@ -201,7 +205,6 @@ dependencies {
     implementation(libs.androidx.paging.compose)
 
     // https://developer.android.com/jetpack/androidx/releases/room
-    ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.room.paging)
 
     implementation(libs.androidx.work.runtime)
@@ -212,9 +215,6 @@ dependencies {
 
     // https://square.github.io/okhttp/changelogs/changelog/
     implementation(platform(libs.okhttp.bom))
-    implementation(libs.okhttp.android)
-
-    implementation(libs.okio.jvm)
 
     implementation(libs.logcat)
 
@@ -241,7 +241,6 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.datetime)
-    implementation(libs.jsoup)
 
     coreLibraryDesugaring(libs.desugar)
 
@@ -253,42 +252,16 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(21)
-
-    // https://kotlinlang.org/docs/gradle-compiler-options.html#all-compiler-options
     compilerOptions {
-        jvmDefault = JvmDefaultMode.NO_COMPATIBILITY
-        progressiveMode = true
         optIn.addAll(
             "coil3.annotation.ExperimentalCoilApi",
-            "androidx.compose.foundation.layout.ExperimentalLayoutApi",
-            "androidx.compose.material3.ExperimentalMaterial3Api",
-            "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
-            "androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi",
-            "androidx.compose.ui.ExperimentalComposeUiApi",
-            "androidx.compose.foundation.ExperimentalFoundationApi",
-            "androidx.compose.animation.ExperimentalAnimationApi",
-            "androidx.compose.animation.ExperimentalSharedTransitionApi",
-            "androidx.compose.runtime.ExperimentalComposeRuntimeApi",
             "androidx.paging.ExperimentalPagingApi",
-            "kotlin.ExperimentalStdlibApi",
-            "kotlin.concurrent.atomics.ExperimentalAtomicApi",
-            "kotlin.contracts.ExperimentalContracts",
-            "kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "kotlinx.coroutines.FlowPreview",
-            "kotlinx.serialization.ExperimentalSerializationApi",
-            "splitties.experimental.ExperimentalSplittiesApi",
-            "splitties.preferences.DataStorePreferencesPreview",
-        )
-        freeCompilerArgs.addAll(
-            "-Xcontext-parameters",
-            "-Xannotation-default-target=param-property",
+            "me.saket.telephoto.ExperimentalTelephotoApi",
         )
     }
 }
 
 ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
     arg("compose-destinations.codeGenPackageName", "com.hippo.ehviewer.ui")
 }
 
@@ -300,18 +273,5 @@ aboutLibraries {
         exclusionPatterns.add(Pattern.compile("org\\.jetbrains\\.(?:compose|androidx)\\..*"))
         duplicationMode = DuplicateMode.MERGE
         duplicationRule = DuplicateRule.GROUP
-    }
-}
-
-val ktlintVersion = libs.ktlint.get().version
-
-spotless {
-    kotlin {
-        // https://github.com/diffplug/spotless/issues/111
-        target("src/**/*.kt")
-        ktlint(ktlintVersion)
-    }
-    kotlinGradle {
-        ktlint(ktlintVersion)
     }
 }

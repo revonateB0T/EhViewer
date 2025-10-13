@@ -1,11 +1,11 @@
 package com.hippo.ehviewer.ui.login
 
 import arrow.core.Either.Companion.catch
+import com.ehviewer.core.util.logcat
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhCookieStore
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUrl
-import eu.kanade.tachiyomi.util.system.logcat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +36,7 @@ fun postLogin() = GlobalScope.async(Dispatchers.IO) {
     // Get cookies for image limits
     launch {
         catch {
-            EhEngine.getUConfig(EhUrl.URL_UCONFIG_E)
+            EhEngine.getUConfig(EhUrl.SITE_E)
             EhCookieStore.flush()
         }.onLeft {
             logcat(it)
@@ -45,7 +45,7 @@ fun postLogin() = GlobalScope.async(Dispatchers.IO) {
 
     // Sad panda check
     catch {
-        EhEngine.getUConfig(EhUrl.URL_UCONFIG_EX)
+        EhEngine.getUConfig(EhUrl.SITE_EX)
         EhCookieStore.flush()
         Settings.gallerySite.value = EhUrl.SITE_EX
     }.onLeft {

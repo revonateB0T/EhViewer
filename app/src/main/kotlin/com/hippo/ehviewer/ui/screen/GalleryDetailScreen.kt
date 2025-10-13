@@ -6,7 +6,6 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NewLabel
 import androidx.compose.material.icons.filled.Refresh
@@ -15,6 +14,7 @@ import androidx.compose.material3.AppBarRow
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarResult
@@ -34,20 +34,30 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.util.fastJoinToString
 import androidx.lifecycle.viewModelScope
+import com.ehviewer.core.data.model.findBaseInfo
+import com.ehviewer.core.database.model.DownloadInfo
+import com.ehviewer.core.files.delete
+import com.ehviewer.core.files.toOkioPath
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.model.BaseGalleryInfo
+import com.ehviewer.core.model.GalleryDetail
+import com.ehviewer.core.model.GalleryInfo
+import com.ehviewer.core.ui.util.LocalWindowSizeClass
+import com.ehviewer.core.ui.util.isExpanded
+import com.ehviewer.core.ui.util.launchInVM
+import com.ehviewer.core.ui.util.rememberInVM
+import com.ehviewer.core.util.launchIO
+import com.ehviewer.core.util.logcat
+import com.ehviewer.core.util.withIOContext
 import com.hippo.ehviewer.EhApplication.Companion.imageCache
 import com.hippo.ehviewer.EhDB
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUrl
 import com.hippo.ehviewer.client.EhUtils
-import com.hippo.ehviewer.client.data.BaseGalleryInfo
-import com.hippo.ehviewer.client.data.GalleryDetail
-import com.hippo.ehviewer.client.data.GalleryInfo
-import com.hippo.ehviewer.client.data.findBaseInfo
+import com.hippo.ehviewer.client.data.fillInfo
 import com.hippo.ehviewer.client.getImageKey
 import com.hippo.ehviewer.coil.justDownload
-import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.download.DownloadManager
 import com.hippo.ehviewer.ktbuilder.executeIn
 import com.hippo.ehviewer.ktbuilder.imageRequest
@@ -55,28 +65,20 @@ import com.hippo.ehviewer.spider.SpiderDen
 import com.hippo.ehviewer.ui.MainActivity
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.main.GalleryDetailErrorTip
+import com.hippo.ehviewer.ui.main.NavigationIcon
 import com.hippo.ehviewer.ui.navToReader
 import com.hippo.ehviewer.ui.openBrowser
-import com.hippo.ehviewer.ui.tools.LocalWindowSizeClass
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.awaitSelectTags
-import com.hippo.ehviewer.ui.tools.isExpanded
-import com.hippo.ehviewer.ui.tools.launchInVM
-import com.hippo.ehviewer.ui.tools.rememberInVM
 import com.hippo.ehviewer.util.AppHelper
 import com.hippo.ehviewer.util.awaitActivityResult
 import com.hippo.ehviewer.util.bgWork
 import com.hippo.ehviewer.util.displayString
-import com.hippo.files.delete
-import com.hippo.files.toOkioPath
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.withIOContext
-import eu.kanade.tachiyomi.util.system.logcat
 import kotlinx.serialization.Serializable
 import moe.tarsin.coroutines.runSuspendCatching
-import moe.tarsin.launchIO
 import moe.tarsin.snackbar
 import moe.tarsin.tip
 
@@ -108,7 +110,7 @@ fun AnimatedVisibilityScope.GalleryDetailScreen(args: GalleryDetailScreenArgs, n
             is TokenArgs -> args.gid to args.token
         }
     }
-    val galleryDetailUrl = remember(gid, token) { EhUrl.getGalleryDetailUrl(gid, token, 0, false) }
+    val galleryDetailUrl = remember(gid, token) { EhUrl.getGalleryDetailUrl(gid, token) }
     contextOf<MainActivity>().ProvideAssistContent(galleryDetailUrl)
 
     var galleryInfo by rememberInVM {
@@ -121,7 +123,7 @@ fun AnimatedVisibilityScope.GalleryDetailScreen(args: GalleryDetailScreenArgs, n
 
     (galleryInfo as? GalleryDetail)?.apply {
         rememberInVM(this) {
-            if (Settings.preloadThumbAggressively) {
+            if (Settings.preloadThumbAggressively.value) {
                 previewList.forEach {
                     imageRequest(it) { justDownload() }.executeIn(viewModelScope)
                 }
@@ -136,12 +138,12 @@ fun AnimatedVisibilityScope.GalleryDetailScreen(args: GalleryDetailScreenArgs, n
                     withIOContext { EhEngine.getGalleryDetail(galleryDetailUrl) }
                 }.onSuccess { galleryDetail ->
                     detailCache[galleryDetail.gid] = galleryDetail
-                }.onFailure {
-                    galleryInfo?.let { info -> EhDB.putHistoryInfo(info.findBaseInfo()) }
-                    getDetailError = it.displayString()
+                }.onFailure { e ->
+                    galleryInfo?.let { EhDB.putHistoryInfo(it) }
+                    getDetailError = e.displayString()
                 }.getOrNull()
             galleryDetail?.let {
-                EhDB.putHistoryInfo(it.galleryInfo)
+                EhDB.putHistoryInfo(it)
                 galleryInfo = it
             }
         }
@@ -182,19 +184,12 @@ fun AnimatedVisibilityScope.GalleryDetailScreen(args: GalleryDetailScreenArgs, n
                         )
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = { navigator.popBackStack() }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Default.ArrowBack,
-                            contentDescription = null,
-                        )
-                    }
-                },
+                navigationIcon = { NavigationIcon() },
                 scrollBehavior = scrollBehavior,
                 actions = {
                     AppBarRow(
                         overflowIndicator = {
-                            IconButton(onClick = { it.show() }) {
+                            IconButton(onClick = { it.show() }, shapes = IconButtonDefaults.shapes()) {
                                 Icon(imageVector = Icons.Default.MoreVert, contentDescription = null)
                             }
                         },
@@ -255,7 +250,7 @@ fun AnimatedVisibilityScope.GalleryDetailScreen(args: GalleryDetailScreenArgs, n
                                     ) {
                                         Text(text = stringResource(id = R.string.clear_image_cache_confirm))
                                     }
-                                    (0..<gd.pages).forEach {
+                                    repeat(gd.pages) {
                                         val key = getImageKey(gd.gid, it)
                                         imageCache.remove(key)
                                     }

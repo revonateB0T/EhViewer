@@ -36,7 +36,12 @@ import coil3.size.Dimension
 import coil3.size.Precision
 import coil3.size.Size
 import coil3.size.SizeResolver
+import com.ehviewer.core.files.openFileDescriptor
+import com.ehviewer.core.files.toUri
+import com.ehviewer.core.util.isAtLeastP
+import com.ehviewer.core.util.isAtLeastU
 import com.hippo.ehviewer.Settings
+import com.hippo.ehviewer.coil.AnimatedWebPDrawable
 import com.hippo.ehviewer.coil.BitmapImageWithExtraInfo
 import com.hippo.ehviewer.coil.detectQrCode
 import com.hippo.ehviewer.coil.hardwareThreshold
@@ -47,21 +52,17 @@ import com.hippo.ehviewer.jni.munmap
 import com.hippo.ehviewer.jni.rewriteGifSource
 import com.hippo.ehviewer.ktbuilder.execute
 import com.hippo.ehviewer.ktbuilder.imageRequest
-import com.hippo.ehviewer.util.isAtLeastP
-import com.hippo.ehviewer.util.isAtLeastU
-import com.hippo.ehviewer.util.updateAndGet
-import com.hippo.files.openFileDescriptor
-import com.hippo.files.toUri
 import java.nio.ByteBuffer
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.decrementAndFetch
+import kotlin.concurrent.atomics.updateAndFetch
 import okio.Path
 import splitties.init.appCtx
 
 class Image private constructor(image: CoilImage, private val src: ImageSource) {
     val refcnt = AtomicInt(1)
 
-    fun pin() = refcnt.updateAndGet { if (it != 0) it + 1 else 0 } != 0
+    fun pin() = refcnt.updateAndFetch { if (it != 0) it + 1 else 0 } != 0
 
     fun unpin() = (refcnt.decrementAndFetch() == 0).also { if (it) recycle() }
 
@@ -79,7 +80,10 @@ class Image private constructor(image: CoilImage, private val src: ImageSource) 
 
     private fun recycle() {
         when (val image = innerImage!!) {
-            is DrawableImage -> src.close()
+            is DrawableImage -> {
+                (image.drawable as? AnimatedWebPDrawable)?.dispose()
+                src.close()
+            }
             is BitmapImage -> image.bitmap.recycle()
         }
         innerImage = null
@@ -97,7 +101,7 @@ class Image private constructor(image: CoilImage, private val src: ImageSource) 
                     size(sizeResolver)
                     precision(Precision.INEXACT)
                     allowHardware(false)
-                    hardwareThreshold(Settings.hardwareBitmapThreshold)
+                    hardwareThreshold(Settings.hardwareBitmapThreshold.value)
                     maybeCropBorder(Settings.cropBorder.value)
                     detectQrCode(checkExtraneousAds)
                     memoryCachePolicy(CachePolicy.DISABLED)

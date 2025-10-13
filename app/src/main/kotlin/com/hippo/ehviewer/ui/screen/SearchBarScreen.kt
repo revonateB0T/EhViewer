@@ -1,10 +1,12 @@
 package com.hippo.ehviewer.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,9 +21,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.input.TextFieldState
@@ -36,8 +39,10 @@ import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
@@ -60,25 +65,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.coerceAtMost
 import androidx.compose.ui.unit.dp
+import com.ehviewer.core.database.dao.SearchDao
+import com.ehviewer.core.database.model.Search
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.model.TagNamespace
+import com.ehviewer.core.ui.util.ifNotNullThen
+import com.ehviewer.core.ui.util.ifTrueThen
+import com.ehviewer.core.ui.util.thenIf
 import com.hippo.ehviewer.EhApplication.Companion.searchDatabase
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhTagDatabase
-import com.hippo.ehviewer.client.data.TagNamespace
 import com.hippo.ehviewer.collectAsState
-import com.hippo.ehviewer.dao.Search
-import com.hippo.ehviewer.dao.SearchDao
 import com.hippo.ehviewer.ui.LocalNavDrawerState
 import com.hippo.ehviewer.ui.destinations.ImageSearchScreenDestination
+import com.hippo.ehviewer.ui.theme.scrim
 import com.hippo.ehviewer.ui.tools.DialogState
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.rememberCompositionActiveState
-import com.hippo.ehviewer.ui.tools.thenIf
-import com.jamal.composeprefs3.ui.ifNotNullThen
-import com.jamal.composeprefs3.ui.ifTrueThen
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.launchIO
-import eu.kanade.tachiyomi.util.lang.launchUI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
@@ -88,7 +92,7 @@ import kotlinx.coroutines.launch
 import moe.tarsin.navigate
 
 fun interface SuggestionProvider {
-    fun providerSuggestions(text: String): Suggestion?
+    suspend fun providerSuggestions(text: String): List<Suggestion>
 }
 
 abstract class Suggestion {
@@ -101,8 +105,8 @@ abstract class Suggestion {
 
 suspend fun SearchDao.suggestions(prefix: String, limit: Int) = (if (prefix.isBlank()) list(limit) else rawSuggestions(prefix, limit))
 
-context(_: DialogState, _: DestinationsNavigator)
 @Composable
+context(_: DialogState, _: DestinationsNavigator)
 fun SearchBarScreen(
     onApplySearch: (String) -> Unit,
     expanded: Boolean,
@@ -111,7 +115,7 @@ fun SearchBarScreen(
     searchFieldHint: String,
     searchFieldState: TextFieldState = rememberTextFieldState(),
     suggestionProvider: SuggestionProvider? = null,
-    tagNamespace: Boolean = false,
+    localSearch: Boolean = true,
     searchBarOffsetY: () -> Int = { 0 },
     trailingIcon: @Composable () -> Unit = {},
     filter: @Composable (() -> Unit)? = null,
@@ -130,10 +134,18 @@ fun SearchBarScreen(
     ) : Suggestion() {
         override fun onClick() {
             val query = searchFieldState.text.toString()
-            var keywords = query.substringBeforeLast(' ', "")
-            if (keywords.isNotEmpty()) keywords += ' '
-            keywords += if (tagNamespace) wrapTagKeyword(keyword) else keyword.substringAfter(':')
-            if (!keywords.endsWith(':')) keywords += ' '
+            val (index, keyword) = if (localSearch) {
+                query.lastIndexOf(' ') to
+                    "${keyword.substringAfter(':')} "
+            } else {
+                query.lastIndexOfAny(TagTerminators) to
+                    if (keyword.endsWith(':')) keyword else "${wrapTagKeyword(keyword)} "
+            }
+            val keywords = if (index == -1) {
+                keyword
+            } else {
+                "${query.substring(0, index + 1).trimEnd()} $keyword"
+            }
             searchFieldState.setTextAndPlaceCursorAtEnd(keywords)
         }
     }
@@ -150,15 +162,13 @@ fun SearchBarScreen(
     fun mergedSuggestionFlow(): Flow<Suggestion> = with(context) {
         flow {
             val query = searchFieldState.text.toString()
-            suggestionProvider?.run { providerSuggestions(query)?.let { emit(it) } }
+            suggestionProvider?.run { providerSuggestions(query).forEach { emit(it) } }
             mSearchDatabase.suggestions(query, 128).forEach { emit(KeywordSuggestion(it)) }
-            if (query.isNotEmpty() && !query.endsWith(' ')) {
-                EhTagDatabase.suggestion(
-                    query.substringAfterLast(' '),
-                    Settings.showTagTranslations,
-                ).forEach { (tag, hint) ->
-                    emit(TagSuggestion(hint, tag))
-                }
+            val index = if (localSearch) query.lastIndexOf(' ') else query.lastIndexOfAny(TagTerminators)
+            val keyword = query.substring(index + 1).trimStart()
+            if (keyword.isNotEmpty()) {
+                EhTagDatabase.suggestion(keyword, Settings.showTagTranslations.value).take(50)
+                    .forEach { emit(TagSuggestion(it.hint, it.tag)) }
             }
         }
     }
@@ -183,7 +193,7 @@ fun SearchBarScreen(
         // May have invalid whitespaces if pasted from clipboard, replace them with spaces
         val query = searchFieldState.text.trim().replace(WhitespaceRegex, " ")
         if (query.isNotEmpty()) {
-            scope.launchIO {
+            scope.launch {
                 mSearchDatabase.deleteQuery(query)
                 val search = Search(System.currentTimeMillis(), query)
                 mSearchDatabase.insert(search)
@@ -205,8 +215,13 @@ fun SearchBarScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                // Placeholder, fill immutable SearchBar padding
-                Spacer(modifier = Modifier.statusBarsPadding().height(SearchBarDefaults.InputFieldHeight + 16.dp))
+                Column {
+                    val scrim = MaterialTheme.colorScheme.background.scrim()
+                    Box(Modifier.windowInsetsTopHeight(WindowInsets.statusBars).fillMaxWidth().background(scrim))
+
+                    // Placeholder, fill immutable SearchBar padding
+                    Spacer(modifier = Modifier.height(SearchBarDefaults.InputFieldHeight + 16.dp))
+                }
             },
             floatingActionButton = floatingActionButton,
             content = content,
@@ -235,12 +250,12 @@ fun SearchBarScreen(
                     },
                     leadingIcon = {
                         if (expanded) {
-                            IconButton(onClick = { hideSearchView() }) {
+                            IconButton(onClick = { hideSearchView() }, shapes = IconButtonDefaults.shapes()) {
                                 Icon(Icons.AutoMirrored.Default.ArrowBack, contentDescription = null)
                             }
                         } else {
                             val drawerState = LocalNavDrawerState.current
-                            IconButton(onClick = { scope.launchUI { drawerState.open() } }) {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }, shapes = IconButtonDefaults.shapes()) {
                                 Icon(Icons.Default.Menu, contentDescription = null)
                             }
                         }
@@ -249,11 +264,11 @@ fun SearchBarScreen(
                         if (expanded) {
                             AnimatedContent(targetState = searchFieldState.text.isNotEmpty()) { hasText ->
                                 if (hasText) {
-                                    IconButton(onClick = { searchFieldState.clearText() }) {
+                                    IconButton(onClick = { searchFieldState.clearText() }, shapes = IconButtonDefaults.shapes()) {
                                         Icon(Icons.Default.Close, contentDescription = null)
                                     }
                                 } else {
-                                    IconButton(onClick = { navigate(ImageSearchScreenDestination) }) {
+                                    IconButton(onClick = { navigate(ImageSearchScreenDestination) }, shapes = IconButtonDefaults.shapes()) {
                                         Icon(Icons.Default.ImageSearch, contentDescription = null)
                                     }
                                 }
@@ -288,7 +303,7 @@ fun SearchBarScreen(
                             )
                         },
                         trailingContent = it.canDelete.ifTrueThen {
-                            IconButton(onClick = { deleteKeyword(it.keyword) }) {
+                            IconButton(onClick = { deleteKeyword(it.keyword) }, shapes = IconButtonDefaults.shapes()) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = null,
@@ -304,9 +319,7 @@ fun SearchBarScreen(
     }
 }
 
-fun wrapTagKeyword(keyword: String, translate: Boolean = false): String = if (keyword.endsWith(':')) {
-    keyword
-} else {
+fun wrapTagKeyword(keyword: String, translate: Boolean = false): String = run {
     val tag = keyword.substringAfter(':')
     val prefix = keyword.dropLast(tag.length + 1)
     if (translate) {
@@ -321,6 +334,7 @@ fun wrapTagKeyword(keyword: String, translate: Boolean = false): String = if (ke
     }
 }
 
+private val TagTerminators = charArrayOf('"', '$')
 private val WhitespaceRegex = Regex("\\s+")
 private val SearchBarHorizontalPadding = 16.dp
 private val M3SearchBarMaxWidth = 720.dp

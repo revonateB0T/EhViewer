@@ -1,7 +1,7 @@
 package com.hippo.ehviewer.legacy
 
+import com.ehviewer.core.files.read
 import com.hippo.ehviewer.spider.SpiderInfo
-import com.hippo.files.read
 import kotlinx.io.readLineStrict
 import okio.Path
 
@@ -10,15 +10,15 @@ fun Path.readLegacySpiderInfo() = read {
     fun readInt() = read().toInt()
     fun readLong() = read().toLong()
 
-    repeat(2) { read() } // We assert that only info v2
+    read() // Skip version, we assert it's v2
+    read() // Skip startPage
     val gid = readLong()
     val token = read()
-    read()
-    val previewPages = readInt()
+    read() // Skip mode
+    read() // Skip previewPages
     val previewPerPage = readInt()
-    val pages = read().toInt()
-    val pTokenMap = hashMapOf<Int, String>()
-    SpiderInfo(gid, token, pages, pTokenMap, previewPages, previewPerPage).apply {
+    val pages = readInt()
+    SpiderInfo(gid, token, pages, previewPerPage = previewPerPage).apply {
         runCatching {
             while (true) {
                 val line = read()

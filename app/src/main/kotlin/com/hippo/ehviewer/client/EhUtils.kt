@@ -27,9 +27,10 @@ import androidx.compose.runtime.Stable
 import androidx.compose.ui.graphics.Color
 import androidx.core.net.toUri
 import arrow.core.memoize
+import com.ehviewer.core.model.GalleryDetail
+import com.ehviewer.core.model.GalleryInfo
+import com.ehviewer.core.util.withUIContext
 import com.hippo.ehviewer.Settings
-import com.hippo.ehviewer.client.data.GalleryDetail
-import com.hippo.ehviewer.client.data.GalleryInfo
 import com.hippo.ehviewer.client.parser.Archive
 import com.hippo.ehviewer.spider.SpiderDen
 import com.hippo.ehviewer.util.AppConfig
@@ -38,7 +39,6 @@ import com.hippo.ehviewer.util.addTextToClipboard
 import com.materialkolor.hct.Hct
 import com.materialkolor.ktx.from
 import com.materialkolor.ktx.toColor
-import eu.kanade.tachiyomi.util.lang.withUIContext
 import splitties.systemservices.downloadManager
 
 object EhUtils {
@@ -143,7 +143,7 @@ object EhUtils {
                 else -> BG_COLOR_UNKNOWN
             }.toInt(),
         )
-        return if (Settings.harmonizeCategoryColor) {
+        return if (Settings.harmonizeCategoryColor.value) {
             val primaryContainer = MaterialTheme.colorScheme.primaryContainer
             mergeColor(primaryContainer, primary)
         } else {
@@ -163,7 +163,7 @@ object EhUtils {
         Settings.needSignIn.value = true
     }
 
-    fun getSuitableTitle(gi: GalleryInfo): String = if (Settings.showJpnTitle) {
+    fun getSuitableTitle(gi: GalleryInfo): String = if (Settings.showJpnTitle.value) {
         if (gi.titleJpn.isNullOrEmpty()) gi.title else gi.titleJpn
     } else {
         if (gi.title.isNullOrEmpty()) gi.titleJpn else gi.title
@@ -182,7 +182,7 @@ object EhUtils {
     context(ctx: Context)
     suspend fun downloadArchive(galleryDetail: GalleryDetail, archive: Archive) {
         val gid = galleryDetail.gid
-        EhEngine.downloadArchive(gid, galleryDetail.token, archive.res, archive.isHAtH)?.let {
+        EhEngine.downloadArchive(gid, galleryDetail.token, archive.res, archive.isHath)?.let {
             val uri = it.toUri()
             val intent = Intent().apply {
                 action = Intent.ACTION_VIEW
@@ -201,7 +201,7 @@ object EhUtils {
                 r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 downloadManager.enqueue(r)
             }
-            if (Settings.archiveMetadata) {
+            if (Settings.archiveMetadata.value) {
                 SpiderDen(galleryDetail).apply {
                     initDownloadDir()
                     writeComicInfo()

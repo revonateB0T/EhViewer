@@ -11,6 +11,7 @@ import android.text.style.URLSpan
 import androidx.annotation.ColorInt
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,19 +26,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -50,7 +53,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -69,7 +71,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -83,28 +84,34 @@ import androidx.core.text.buildSpannedString
 import androidx.core.text.getSpans
 import androidx.core.text.inSpans
 import androidx.core.text.parseAsHtml
-import com.hippo.ehviewer.R
+import com.ehviewer.core.database.model.Filter
+import com.ehviewer.core.database.model.FilterMode
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.model.GalleryComment
+import com.ehviewer.core.ui.util.animateFloatMergePredictiveBackAsState
+import com.ehviewer.core.ui.util.snackBarPadding
+import com.ehviewer.core.ui.util.thenIf
+import com.ehviewer.core.util.isAtLeastP
+import com.ehviewer.core.util.launch
+import com.ehviewer.core.util.launchIO
+import com.ehviewer.core.util.logcat
+import com.ehviewer.core.util.withUIContext
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhFilter.remember
 import com.hippo.ehviewer.client.EhUrl
-import com.hippo.ehviewer.client.data.GalleryComment
 import com.hippo.ehviewer.client.data.ListUrlBuilder
 import com.hippo.ehviewer.collectAsState
-import com.hippo.ehviewer.dao.Filter
-import com.hippo.ehviewer.dao.FilterMode
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.jumpToReaderByPage
 import com.hippo.ehviewer.ui.main.GalleryCommentCard
+import com.hippo.ehviewer.ui.main.NavigationIcon
 import com.hippo.ehviewer.ui.openBrowser
-import com.hippo.ehviewer.ui.tools.animateFloatMergePredictiveBackAsState
+import com.hippo.ehviewer.ui.tools.addBBCodeTextContextMenuItems
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.awaitSelectAction
 import com.hippo.ehviewer.ui.tools.normalizeSpan
-import com.hippo.ehviewer.ui.tools.rememberBBCodeTextToolbar
 import com.hippo.ehviewer.ui.tools.showNoButton
-import com.hippo.ehviewer.ui.tools.snackBarPadding
-import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.ui.tools.toBBCode
 import com.hippo.ehviewer.ui.tools.updateSpan
 import com.hippo.ehviewer.util.ReadableTime
@@ -113,13 +120,8 @@ import com.hippo.ehviewer.util.displayString
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.withUIContext
-import eu.kanade.tachiyomi.util.system.logcat
-import kotlin.collections.forEach
 import kotlin.math.roundToInt
 import moe.tarsin.coroutines.runSuspendCatching
-import moe.tarsin.launch
-import moe.tarsin.launchIO
 import moe.tarsin.navigate
 import moe.tarsin.snackbar
 
@@ -194,7 +196,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
     val density = LocalDensity.current
 
     suspend fun refreshComment(showAll: Boolean) {
-        val url = EhUrl.getGalleryDetailUrl(galleryDetail.gid, galleryDetail.token, 0, showAll)
+        val url = EhUrl.getGalleryDetailUrl(galleryDetail.gid, galleryDetail.token, allComment = showAll)
         val detail = EhEngine.getGalleryDetail(url)
         comments = detail.comments
     }
@@ -217,7 +219,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
     suspend fun sendComment() {
         commenting = false
         withUIContext { focusManager.clearFocus() }
-        val url = EhUrl.getGalleryDetailUrl(galleryDetail.gid, galleryDetail.token, 0, false)
+        val url = EhUrl.getGalleryDetailUrl(galleryDetail.gid, galleryDetail.token)
         userComment.runSuspendCatching {
             val bbcode = annotatedString.normalizeSpan().toBBCode()
             logcat("sendComment") { bbcode }
@@ -243,9 +245,8 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
         snackbar(filterAdded)
     }
 
-    suspend fun showCommentVoteStatus(comment: GalleryComment) {
-        val statusStr = comment.voteState ?: return
-        val data = statusStr.split(',').map {
+    suspend fun showCommentVoteStatus(status: String) {
+        val data = status.split(',').map {
             val str = it.trim()
             val index = str.lastIndexOf(' ')
             if (index < 0) {
@@ -276,11 +277,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(id = R.string.gallery_comments)) },
-                navigationIcon = {
-                    IconButton(onClick = { navigator.popBackStack() }) {
-                        Icon(imageVector = Icons.AutoMirrored.Default.ArrowBack, contentDescription = null)
-                    }
-                },
+                navigationIcon = { NavigationIcon() },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -301,7 +298,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
             }
         },
     ) { paddingValues ->
-        val keylineMargin = dimensionResource(id = R.dimen.keyline_margin)
+        val keylineMargin = dimensionResource(id = com.hippo.ehviewer.R.dimen.keyline_margin)
         var editTextMeasured by remember { mutableStateOf(MinimumContentPaddingEditText) }
         var isRefreshing by remember { mutableStateOf(false) }
         val refreshState = rememberPullToRefreshState()
@@ -316,7 +313,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
                     isRefreshing = false
                 }
             },
-            modifier = Modifier.fillMaxSize().imePadding().padding(top = paddingValues.calculateTopPadding()),
+            modifier = Modifier.imePadding().padding(top = paddingValues.calculateTopPadding()),
             state = refreshState,
             indicator = {
                 PullToRefreshDefaults.LoadingIndicator(
@@ -343,7 +340,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
             val layoutDirection = LocalLayoutDirection.current
             val lazyListState = rememberLazyListState()
             LazyColumn(
-                modifier = Modifier.padding(horizontal = keylineMargin),
+                modifier = Modifier.fillMaxSize().padding(horizontal = keylineMargin),
                 state = lazyListState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(
@@ -400,7 +397,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
                         }
                         if (!comment.voteState.isNullOrEmpty()) {
                             onSelect(checkVoteStatus) {
-                                showCommentVoteStatus(comment)
+                                showCommentVoteStatus(comment.voteState!!)
                             }
                         }
                     }()
@@ -450,6 +447,7 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
                                                 refreshing = false
                                             }
                                         },
+                                        shapes = ButtonDefaults.shapes(),
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text(text = stringResource(id = R.string.click_more_comments))
@@ -459,6 +457,11 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
                         }
                     }
                 }
+            }
+            if (!isAtLeastP) {
+                // Workaround for crash when 0-sized TextField is focused
+                // https://issuetracker.google.com/440964236
+                Box(Modifier.size(1.dp).focusable())
             }
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).layout { measurable, constraints ->
@@ -481,20 +484,18 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
                     },
                 ) {
                     val color = MaterialTheme.colorScheme.onPrimaryContainer
-                    val toolbar = rememberBBCodeTextToolbar(userCommentBackField)
-                    CompositionLocalProvider(LocalTextToolbar provides toolbar) {
-                        BasicTextField(
-                            value = userComment,
-                            onValueChange = { textFieldValue ->
-                                userComment = textFieldValue.updateSpan(userComment)
-                            },
-                            modifier = Modifier.weight(1f).padding(keylineMargin),
-                            textStyle = MaterialTheme.typography.bodyLarge.merge(color = color),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        )
-                    }
+                    BasicTextField(
+                        value = userComment,
+                        onValueChange = { textFieldValue ->
+                            userComment = textFieldValue.updateSpan(userComment)
+                        },
+                        modifier = Modifier.weight(1f).padding(keylineMargin).addBBCodeTextContextMenuItems(userCommentBackField),
+                        textStyle = MaterialTheme.typography.bodyLarge.merge(color = color),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    )
                     IconButton(
                         onClick = { launchIO { sendComment() } },
+                        shapes = IconButtonDefaults.shapes(),
                         modifier = Modifier.align(Alignment.CenterVertically).padding(16.dp),
                     ) {
                         Icon(

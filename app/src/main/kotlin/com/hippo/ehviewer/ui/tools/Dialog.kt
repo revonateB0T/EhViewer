@@ -3,20 +3,17 @@ package com.hippo.ehviewer.ui.tools
 import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.foundation.MutatorMutex
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -38,6 +35,7 @@ import androidx.compose.material.icons.filled.NewLabel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
@@ -49,6 +47,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -64,6 +63,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDialog
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -87,18 +87,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
 import arrow.core.Either
 import arrow.core.raise.Raise
 import arrow.core.raise.either
 import arrow.core.right
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.FastScrollLazyColumn
+import com.ehviewer.core.ui.component.LabeledCheckbox
+import com.ehviewer.core.ui.util.ifNotNullThen
+import com.ehviewer.core.ui.util.ifTrueThen
 import com.hippo.ehviewer.client.EhTagDatabase
 import com.hippo.ehviewer.client.EhTagDatabase.suggestion
-import com.jamal.composeprefs3.ui.ifNotNullThen
-import com.jamal.composeprefs3.ui.ifTrueThen
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellableContinuation
@@ -120,8 +121,8 @@ class DialogState(val mutex: MutatorMutex = MutatorMutex()) : MutableComposable 
     @Composable
     fun rememberLocal() = remember { DialogState(mutex) }
 
-    context(scope: BoxScope)
     @Composable
+    context(scope: BoxScope)
     fun Place() = value?.let { it(scope) }
 
     fun dismiss() {
@@ -162,18 +163,19 @@ suspend fun <R> awaitResult(
     AlertDialog(
         onDismissRequest = { cont.cancel() },
         confirmButton = {
-            TextButton(onClick = {
-                if (invalidator == null || errorMsg == null) {
-                    cont.resume(state.value)
-                }
-            }) {
+            TextButton(
+                onClick = {
+                    if (invalidator == null || errorMsg == null) {
+                        cont.resume(state.value)
+                    }
+                },
+                shapes = ButtonDefaults.shapes(),
+            ) {
                 Text(text = stringResource(id = android.R.string.ok))
             }
         },
         dismissButton = {
-            TextButton(onClick = {
-                cont.cancel()
-            }) {
+            TextButton(onClick = { cont.cancel() }, shapes = ButtonDefaults.shapes()) {
                 Text(text = stringResource(id = android.R.string.cancel))
             }
         },
@@ -182,7 +184,7 @@ suspend fun <R> awaitResult(
     )
 }
 
-context(ctx: Context, state: DialogState)
+context(_: Context, _: DialogState)
 suspend fun awaitSelectTags(): List<String> = dialog { cont ->
     val selected = remember { mutableStateListOf<String>() }
     val state = rememberTextFieldState()
@@ -191,12 +193,14 @@ suspend fun awaitSelectTags(): List<String> = dialog { cont ->
         confirmButton = {
             TextButton(
                 onClick = { cont.resume(selected.toList()) },
+                shapes = ButtonDefaults.shapes(),
                 content = { Text(text = stringResource(id = android.R.string.ok)) },
             )
         },
         dismissButton = {
             TextButton(
                 onClick = { cont.cancel() },
+                shapes = ButtonDefaults.shapes(),
                 content = { Text(text = stringResource(id = android.R.string.cancel)) },
             )
         },
@@ -223,7 +227,7 @@ suspend fun awaitSelectTags(): List<String> = dialog { cont ->
                         InputChip(
                             selected = true,
                             onClick = { },
-                            label = { Text(text = text) },
+                            label = { Text(text = text, overflow = TextOverflow.Ellipsis, maxLines = 1) },
                             trailingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Close,
@@ -252,6 +256,7 @@ suspend fun awaitSelectTags(): List<String> = dialog { cont ->
                                         state.clearText()
                                     }
                                 },
+                                shapes = IconButtonDefaults.shapes(),
                                 content = {
                                     Icon(
                                         imageVector = Icons.Default.Add,
@@ -262,9 +267,9 @@ suspend fun awaitSelectTags(): List<String> = dialog { cont ->
                         },
                     )
                     val query = state.text.toString().trim().takeIf { s -> s.isNotEmpty() }
-                    var items by remember { mutableStateOf(emptyList<Pair<String, String?>>()) }
+                    var items by remember { mutableStateOf(emptyList<EhTagDatabase.Tag>()) }
                     LaunchedEffect(suggestionTranslate, query) {
-                        items = query?.let { suggestion(query, suggestionTranslate).take(15).toList() }.orEmpty()
+                        items = query?.let { suggestion(query, suggestionTranslate).take(15) }.orEmpty()
                         expanded = items.isNotEmpty()
                     }
                     ExposedDropdownMenu(
@@ -276,11 +281,12 @@ suspend fun awaitSelectTags(): List<String> = dialog { cont ->
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text(text = tag, maxLines = 1)
+                                        Text(text = tag, overflow = TextOverflow.Ellipsis, maxLines = 2)
                                         ProvideTextStyle(MaterialTheme.typography.bodySmall) {
                                             if (hint != null) {
                                                 Text(
                                                     text = hint,
+                                                    overflow = TextOverflow.Ellipsis,
                                                     maxLines = 1,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
@@ -326,17 +332,20 @@ suspend fun awaitInputText(
             onUserDismiss?.invoke()
         },
         confirmButton = {
-            TextButton(onClick = {
-                val text = state.text.toString()
-                if (invalidator == null) {
-                    cont.resume(text)
-                } else {
-                    coroutineScope.launch {
-                        error = either { invalidator(text) }.leftOrNull()
-                        error ?: cont.resume(text)
+            TextButton(
+                onClick = {
+                    val text = state.text.toString()
+                    if (invalidator == null) {
+                        cont.resume(text)
+                    } else {
+                        coroutineScope.launch {
+                            error = either { invalidator(text) }.leftOrNull()
+                            error ?: cont.resume(text)
+                        }
                     }
-                }
-            }) {
+                },
+                shapes = ButtonDefaults.shapes(),
+            ) {
                 Text(text = stringResource(id = confirmText))
             }
         },
@@ -378,17 +387,20 @@ suspend fun awaitInputTextWithCheckBox(
     AlertDialog(
         onDismissRequest = { cont.cancel() },
         confirmButton = {
-            TextButton(onClick = {
-                val text = state.text.toString()
-                if (invalidator == null) {
-                    cont.resume(text to checkedState)
-                } else {
-                    coroutineScope.launch {
-                        error = either { invalidator(text, checkedState) }.leftOrNull()
-                        error ?: cont.resume(text to checkedState)
+            TextButton(
+                onClick = {
+                    val text = state.text.toString()
+                    if (invalidator == null) {
+                        cont.resume(text to checkedState)
+                    } else {
+                        coroutineScope.launch {
+                            error = either { invalidator(text, checkedState) }.leftOrNull()
+                            error ?: cont.resume(text to checkedState)
+                        }
                     }
-                }
-            }) {
+                },
+                shapes = ButtonDefaults.shapes(),
+            ) {
                 Text(text = stringResource(id = android.R.string.ok))
             }
         },
@@ -440,16 +452,19 @@ suspend fun awaitConfirmationOrCancel(
         onDismissRequest = { cont.cancel() },
         confirmButton = {
             if (showConfirmButton) {
-                TextButton(onClick = { cont.resume(Unit) }) {
+                TextButton(onClick = { cont.resume(Unit) }, shapes = ButtonDefaults.shapes()) {
                     Text(text = stringResource(id = confirmText))
                 }
             }
         },
         dismissButton = showCancelButton.ifTrueThen {
-            TextButton(onClick = {
-                onCancelButtonClick()
-                cont.cancel()
-            }) {
+            TextButton(
+                onClick = {
+                    onCancelButtonClick()
+                    cont.cancel()
+                },
+                shapes = ButtonDefaults.shapes(),
+            ) {
                 Text(text = stringResource(id = dismissText))
             }
         },
@@ -472,7 +487,7 @@ suspend fun awaitSelectDate(
     initialDisplayMode: DisplayMode = DisplayMode.Picker,
     selectableDates: SelectableDates = DatePickerDefaults.AllDates,
     showModeToggle: Boolean = true,
-): Long? = dialog { cont ->
+): Long = dialog { cont ->
     val state = rememberDatePickerState(
         initialSelectedDateMillis,
         initialDisplayedMonthMillis,
@@ -483,12 +498,12 @@ suspend fun awaitSelectDate(
     DatePickerDialog(
         onDismissRequest = { cont.cancel() },
         confirmButton = {
-            TextButton(onClick = { cont.resume(state.selectedDateMillis) }) {
+            TextButton(onClick = { state.selectedDateMillis?.let { cont.resume(it) } ?: cont.cancel() }, shapes = ButtonDefaults.shapes()) {
                 Text(text = stringResource(id = android.R.string.ok))
             }
         },
         dismissButton = {
-            TextButton(onClick = { cont.cancel() }) {
+            TextButton(onClick = { cont.cancel() }, shapes = ButtonDefaults.shapes()) {
                 Text(text = stringResource(id = android.R.string.cancel))
             }
         },
@@ -530,40 +545,27 @@ suspend fun awaitSelectTime(
     initialMinute: Int,
 ) = dialog { cont ->
     val state = rememberTimePickerState(initialHour, initialMinute)
-    Dialog(
+    TimePickerDialog(
         onDismissRequest = { cont.cancel() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            tonalElevation = 6.dp,
-            modifier = Modifier.width(IntrinsicSize.Min).height(IntrinsicSize.Min).background(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surface,
-            ),
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                TimePicker(state = state)
-                Row(modifier = Modifier.height(40.dp).fillMaxWidth()) {
-                    Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = { cont.cancel() }) {
-                        Text(stringResource(id = android.R.string.cancel))
-                    }
-                    TextButton(onClick = { cont.resume(state.hour to state.minute) }) {
-                        Text(stringResource(id = android.R.string.ok))
-                    }
-                }
+        confirmButton = {
+            TextButton(onClick = { cont.resume(state.hour to state.minute) }, shapes = ButtonDefaults.shapes()) {
+                Text(stringResource(id = android.R.string.ok))
             }
-        }
-    }
+        },
+        title = {
+            Text(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        },
+        dismissButton = {
+            TextButton(onClick = { cont.cancel() }, shapes = ButtonDefaults.shapes()) {
+                Text(stringResource(id = android.R.string.cancel))
+            }
+        },
+        content = { TimePicker(state = state) },
+    )
 }
 
 context(_: DialogState)
@@ -712,7 +714,7 @@ suspend fun awaitSelectItemWithIconAndTextField(
                 label = { Text(text = stringResource(id = hint)) },
                 trailingIcon = {
                     if (note.text.isNotEmpty()) {
-                        IconButton(onClick = { note.clearText() }) {
+                        IconButton(onClick = { note.clearText() }, shapes = IconButtonDefaults.shapes()) {
                             Icon(imageVector = Icons.Default.Close, contentDescription = null)
                         }
                     }
