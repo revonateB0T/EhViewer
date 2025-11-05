@@ -160,6 +160,9 @@ fun AnimatedVisibilityScope.GalleryListScreen(
     var urlBuilder by viewModel.urlBuilder
     var searchBarExpanded by rememberSaveable { mutableStateOf(false) }
     var searchBarOffsetY by remember { mutableIntStateOf(0) }
+    var fabExpanded by remember { mutableStateOf(false) }
+    var fabHidden by remember { mutableStateOf(false) }
+
     val animateItems by Settings.animateItems.collectAsState()
 
     var category by rememberMutableStateInDataStore("SearchCategory") { EhUtils.ALL_CATEGORY }
@@ -169,15 +172,11 @@ fun AnimatedVisibilityScope.GalleryListScreen(
 
     LaunchedEffect(urlBuilder) {
         if (urlBuilder.category != EhUtils.NONE) category = urlBuilder.category
-        if (urlBuilder.mode != MODE_TOPLIST) {
-            var keyword = urlBuilder.keyword.orEmpty()
-            if (urlBuilder.mode == MODE_TAG) {
-                keyword = wrapTagKeyword(keyword)
-            }
-            if (keyword.isNotBlank()) {
-                searchFieldState.setTextAndPlaceCursorAtEnd(keyword)
-            }
+        var keyword = urlBuilder.keyword.takeUnless { urlBuilder.mode == MODE_TOPLIST }.orEmpty()
+        if (urlBuilder.mode == MODE_TAG) {
+            keyword = wrapTagKeyword(keyword)
         }
+        searchFieldState.setTextAndPlaceCursorAtEnd(keyword)
     }
 
     val density = LocalDensity.current
@@ -220,6 +219,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                         Settings.recentToplist = keyword
                         urlBuilder = ListUrlBuilder(MODE_TOPLIST, mKeyword = keyword)
                         data.refresh()
+                        fabHidden = false
                         launch { sheetState.close() }
                     },
                     headlineContent = {
@@ -374,6 +374,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                                                 language = languageFilter
                                             }
                                             data.refresh()
+                                            fabHidden = false
                                         }
                                         launch { sheetState.close() }
                                     },
@@ -424,9 +425,6 @@ fun AnimatedVisibilityScope.GalleryListScreen(
             }
         }
     }
-
-    var fabExpanded by remember { mutableStateOf(false) }
-    var fabHidden by remember { mutableStateOf(false) }
 
     val openGalleryKeyword = stringResource(R.string.gallery_list_search_bar_open_gallery)
     abstract class UrlSuggestion : Suggestion() {
