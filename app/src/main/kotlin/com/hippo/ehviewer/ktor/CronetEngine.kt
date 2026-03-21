@@ -10,9 +10,6 @@ import android.net.http.UrlRequest
 import android.net.http.UrlResponseInfo
 import android.os.Build
 import androidx.annotation.RequiresExtension
-import com.ehviewer.core.preferences.edit
-import com.hippo.ehviewer.Settings
-import com.hippo.ehviewer.util.restartApplication
 import io.ktor.client.engine.HttpClientEngineBase
 import io.ktor.client.engine.callContext
 import io.ktor.client.plugins.HttpTimeoutCapability
@@ -35,20 +32,21 @@ import java.nio.ByteBuffer
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.job
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 class CronetEngine(override val config: CronetConfig) : HttpClientEngineBase("Cronet") {
     // Limit thread to 1 since we are async & non-blocking
-    override val dispatcher = Dispatchers.Default.limitedParallelism(1)
+    // TODO: Investigate https://github.com/FooIbar/EhViewer/issues/2854
+    // override val dispatcher = Dispatchers.Default.limitedParallelism(1)
 
     override val supportedCapabilities = setOf(HttpTimeoutCapability)
 
-    private val executor = dispatcher.asExecutor()
+    private val executor = dispatcher.limitedParallelism(1).asExecutor()
     private val pool = DirectByteBufferPool(32)
     private val client by lazy {
         with(config) { HttpEngine.Builder(context).apply(config).build() }
@@ -95,7 +93,7 @@ class CronetEngine(override val config: CronetConfig) : HttpClientEngineBase("Cr
             }
 
             override fun onReadCompleted(request: UrlRequest, info: UrlResponseInfo, byteBuffer: ByteBuffer) {
-                chunkChan.trySend(byteBuffer).getOrThrow()
+                chunkChan.trySendBlocking(byteBuffer).getOrThrow()
             }
 
             override fun onSucceeded(request: UrlRequest, info: UrlResponseInfo) {
@@ -103,15 +101,6 @@ class CronetEngine(override val config: CronetConfig) : HttpClientEngineBase("Cr
             }
 
             override fun onFailed(request: UrlRequest, info: UrlResponseInfo?, error: HttpException) {
-                // Cronet may crash on some devices, fuck xiaomi
-                // https://github.com/FooIbar/EhViewer/issues/1826
-                val message = error.message.orEmpty()
-                if ("ERR_FILE_NOT_FOUND" in message || "ERR_PROXY_CONNECTION_FAILED" in message) {
-                    Settings.edit(true) {
-                        it[enableCronet] = false
-                    }
-                    with(config.context) { restartApplication() }
-                }
                 if (continuation.isActive) {
                     continuation.resumeWithException(error)
                 } else {

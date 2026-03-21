@@ -15,19 +15,7 @@
       "matchStrings": [
         "(?<depName>\\S*)\\s*GIT_REPOSITORY https://(?<datasource>.*?)\\.com/(?<packageName>.*?)\\.git\\s*GIT_TAG (?<currentValue>\\S*)"
       ],
-      "datasourceTemplate": "{{{datasource}}}-tags"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "chrome.version"
-      ],
-      "matchStrings": [
-        "(?<currentValue>\\S+)"
-      ],
-      "depNameTemplate": "chrome",
-      "datasourceTemplate": "custom.chrome",
-      "extractVersionTemplate": "^(?<version>\\d+)"
+      "datasourceTemplate": "{{datasource}}-tags"
     },
     {
       "customType": "regex",
@@ -54,10 +42,6 @@
     }
   ],
   "customDatasources": {
-    "chrome": {
-      "defaultRegistryUrlTemplate": "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE",
-      "format": "plain"
-    },
     "rust-nightly": {
       "defaultRegistryUrlTemplate": "https://rust-lang.github.io/rustup-components-history/aarch64-linux-android/rust-std",
       "format": "plain"

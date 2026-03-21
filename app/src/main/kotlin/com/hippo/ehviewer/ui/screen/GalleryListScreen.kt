@@ -147,7 +147,7 @@ fun AnimatedVisibilityScope.WhatshotScreen(navigator: DestinationsNavigator) = G
 
 @Destination<RootGraph>
 @Composable
-fun AnimatedVisibilityScope.ToplistScreen(navigator: DestinationsNavigator) = GalleryListScreen(ListUrlBuilder(MODE_TOPLIST, mKeyword = Settings.recentToplist), navigator)
+fun AnimatedVisibilityScope.ToplistScreen(navigator: DestinationsNavigator) = GalleryListScreen(ListUrlBuilder(MODE_TOPLIST, keyword = Settings.recentToplist), navigator)
 
 @Destination<RootGraph>
 @Composable
@@ -172,10 +172,14 @@ fun AnimatedVisibilityScope.GalleryListScreen(
 
     LaunchedEffect(urlBuilder) {
         if (urlBuilder.category != EhUtils.NONE) category = urlBuilder.category
-        var keyword = urlBuilder.keyword.takeUnless { urlBuilder.mode == MODE_TOPLIST }.orEmpty()
-        if (urlBuilder.mode == MODE_TAG) {
-            keyword = wrapTagKeyword(keyword)
-        }
+        val keyword = urlBuilder.keyword?.let { keyword ->
+            when (urlBuilder.mode) {
+                MODE_UPLOADER -> "uploader:\"$keyword\""
+                MODE_TAG -> wrapTagKeyword(keyword)
+                MODE_TOPLIST -> ""
+                else -> keyword
+            }
+        }.orEmpty()
         searchFieldState.setTextAndPlaceCursorAtEnd(keyword)
     }
 
@@ -217,7 +221,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                 ListItem(
                     modifier = Modifier.padding(horizontal = 4.dp).clip(CardDefaults.shape).clickable {
                         Settings.recentToplist = keyword
-                        urlBuilder = ListUrlBuilder(MODE_TOPLIST, mKeyword = keyword)
+                        urlBuilder = ListUrlBuilder(MODE_TOPLIST, keyword = keyword)
                         data.refresh()
                         fabHidden = false
                         launch { sheetState.close() }
@@ -507,6 +511,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
     ) { contentPadding ->
         val height by collectListThumbSizeAsState()
         val showPages by Settings.showGalleryPages.collectAsState()
+        val showProgress by Settings.showReadingProgress.collectAsState()
         val searchBarConnection = remember {
             val slop = ViewConfiguration.get(contextOf<Context>()).scaledTouchSlop
             val topPaddingPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
@@ -535,6 +540,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                     onLongClick = { launch { doGalleryInfoAction(info) } },
                     info = info,
                     showPages = showPages,
+                    showProgress = showProgress,
                     modifier = Modifier.height(height),
                 )
             },
@@ -545,6 +551,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                     onLongClick = { launch { doGalleryInfoAction(info) } },
                     info = info,
                     showPages = showPages,
+                    showProgress = showProgress,
                 )
             },
             searchBarOffsetY = { searchBarOffsetY },
@@ -638,6 +645,7 @@ private fun getSuitableTitleForUrlBuilder(urlBuilder: ListUrlBuilder, appName: B
                 val canTranslate = Settings.showTagTranslations.value && EhTagDatabase.translatable && EhTagDatabase.initialized
                 wrapTagKeyword(keyword, canTranslate)
             }
+            MODE_UPLOADER -> "uploader:\"$keyword\""
             else -> keyword
         }
     } else if (category == EhUtils.NONE && urlBuilder.advanceSearch == -1) {

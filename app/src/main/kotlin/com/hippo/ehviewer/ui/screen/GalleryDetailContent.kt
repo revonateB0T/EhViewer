@@ -215,7 +215,7 @@ fun GalleryDetailContent(
         if (uploader.isNullOrEmpty() || disowned) {
             return
         }
-        navigate(ListUrlBuilder(mode = ListUrlBuilder.MODE_UPLOADER, mKeyword = uploader).asDst())
+        navigate(ListUrlBuilder(mode = ListUrlBuilder.MODE_UPLOADER, keyword = uploader).asDst())
     }
 
     fun onGalleryInfoCardClick() {
@@ -320,7 +320,6 @@ fun GalleryDetailContent(
                 galleryPreview(galleryDetail, previews) { navToReader(galleryDetail.galleryInfo, it) }
             }
         }
-
         else -> FastScrollLazyVerticalGrid(
             columns = GridCells.Fixed(thumbColumns),
             contentPadding = contentPadding,
@@ -530,21 +529,21 @@ fun BelowHeader(galleryDetail: GalleryDetail, voteTag: VoteTag) {
                     navigate(
                         ListUrlBuilder(
                             mode = ListUrlBuilder.MODE_NORMAL,
-                            mKeyword = "\"" + keyword + "\"",
+                            keyword = "\"" + keyword + "\"",
                         ).asDst(),
                     )
                 } else if (artistTag != null) {
                     navigate(
                         ListUrlBuilder(
                             mode = ListUrlBuilder.MODE_TAG,
-                            mKeyword = artistTag,
+                            keyword = artistTag,
                         ).asDst(),
                     )
                 } else if (null != galleryDetail.uploader) {
                     navigate(
                         ListUrlBuilder(
                             mode = ListUrlBuilder.MODE_UPLOADER,
-                            mKeyword = galleryDetail.uploader,
+                            keyword = galleryDetail.uploader,
                         ).asDst(),
                     )
                 }
@@ -722,15 +721,17 @@ fun BelowHeader(galleryDetail: GalleryDetail, voteTag: VoteTag) {
         val upTag = stringResource(R.string.tag_vote_up)
         val downTag = stringResource(R.string.tag_vote_down)
         val withDraw = stringResource(R.string.tag_vote_withdraw)
+        fun search(tag: String) = navigate(ListUrlBuilder(mode = ListUrlBuilder.MODE_TAG, keyword = tag).asDst())
         GalleryTags(
             tagGroups = tags,
-            onTagClick = {
-                navigate(ListUrlBuilder(mode = ListUrlBuilder.MODE_TAG, mKeyword = it).asDst())
-            },
+            onTagClick = ::search,
             onTagLongClick = { tag, translation, vote ->
                 val rawValue = tag.substringAfter(':')
                 launchIO {
                     awaitSelectAction {
+                        onSelect(ctx.getString(R.string.search_bar_hint, tag)) {
+                            withUIContext { search(tag) }
+                        }
                         onSelect(copy) {
                             addTextToClipboard(tag)
                         }

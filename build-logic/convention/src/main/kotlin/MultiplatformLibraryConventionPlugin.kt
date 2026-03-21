@@ -1,6 +1,5 @@
 import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import com.android.build.api.dsl.Lint
-import com.android.build.api.dsl.androidLibrary
 import com.ehviewer.configureKotlin
 import com.ehviewer.configureLint
 import com.ehviewer.configureSpotless
@@ -25,7 +24,7 @@ class MultiplatformLibraryConventionPlugin : Plugin<Project> {
         configure<KotlinMultiplatformExtension> {
             jvmToolchain(21)
             compilerOptions {
-                configureKotlin()
+                configureKotlin(includeKotlinX = path != ":core:i18n")
             }
 
             applyHierarchyTemplate {
@@ -43,9 +42,10 @@ class MultiplatformLibraryConventionPlugin : Plugin<Project> {
             //     }
             // }
 
-            androidLibrary {
+            configure<KotlinMultiplatformAndroidLibraryTarget> {
                 namespace = "com.ehviewer${path.replace(':', '.')}"
 
+                // https://youtrack.jetbrains.com/issue/KT-83319
                 withHostTestBuilder {
                 }
 
