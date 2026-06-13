@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 21
+          java-version-file: .java-version
 
       - name: Install Rust Toolchain
         run: rustup target add thumbv7neon-linux-androideabi
@@ -61,7 +61,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 21
+          java-version-file: .java-version
 
       - name: Install Rust Toolchain
         run: rustup target add thumbv7neon-linux-androideabi
@@ -84,10 +84,6 @@ jobs:
           path: app/.cxx
           key: cmake-default-${{ hashFiles('rust-toolchain.toml', 'settings.gradle.kts', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/rust/Cargo.lock') }}
           restore-keys: cmake-default-
-
-      # https://github.com/mikepenz/AboutLibraries/issues/1225
-      - name: Generate aboutlibraries.json
-        run: ./gradlew :app:prepareLibraryDefinitionsDefaultRelease --rerun
 
       - name: Build
         run: ./gradlew assembleDefaultRelease
@@ -133,7 +129,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 21
+          java-version-file: .java-version
 
       - name: Install Rust Toolchain
         run: rustup target add thumbv7neon-linux-androideabi
@@ -156,10 +152,6 @@ jobs:
           path: app/.cxx
           key: cmake-marshmallow-${{ hashFiles('rust-toolchain.toml', 'settings.gradle.kts', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/rust/Cargo.lock') }}
           restore-keys: cmake-marshmallow-
-
-      # https://github.com/mikepenz/AboutLibraries/issues/1225
-      - name: Generate aboutlibraries.json
-        run: ./gradlew :app:prepareLibraryDefinitionsMarshmallowRelease --rerun
 
       - name: Build
         run: ./gradlew assembleMarshmallowRelease
